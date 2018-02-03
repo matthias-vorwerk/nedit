@@ -54,6 +54,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <zlib.h>
 
 #ifdef VMS
 #include "../util/VMSparam.h"
@@ -102,6 +103,8 @@ static void setFormatCB(Widget w, XtPointer clientData, XtPointer callData);
 static void addWrapCB(Widget w, XtPointer clientData, XtPointer callData);
 static int cmpWinAgainstFile(WindowInfo *window, const char *fileName);
 static int min(int i1, int i2);
+static Boolean filenameEndsWithGz(const char *name);
+
 static void modifiedWindowDestroyedCB(Widget w, XtPointer clientData,
     XtPointer callData);
 static void forceShowLineNumbers(WindowInfo *window);
@@ -358,11 +361,12 @@ static int doOpen(WindowInfo *window, const char *name, const char *path,
 {
     char fullname[MAXPATHLEN];
     struct stat statbuf;
-    int fileLen, readLen;
+    int fileLen, readLen, gzReadLen, gzBufLen;
     char *fileString, *c;
     FILE *fp = NULL;
     int fd;
     int resp;
+    gzFile gzFp;
     
     /* initialize lock reasons */
     CLEAR_ALL_LOCKS(window->lockReasons);
@@ -372,7 +376,9 @@ static int doOpen(WindowInfo *window, const char *name, const char *path,
     strcpy(window->path, path);
     window->filenameSet = TRUE;
     window->fileMissing = TRUE;
-
+    /* we recognize gz files only be file ending, otherwise we have too many cases (new file) */
+	window->fileIsZipped = filenameEndsWithGz(name);
+	
    /* Get the full name of the file */
     strcpy(fullname, path);
     strcat(fullname, name);
@@ -485,39 +491,101 @@ static int doOpen(WindowInfo *window, const char *name, const char *path,
         return FALSE;
     }
 #endif
-    fileLen = statbuf.st_size;
-    
-    /* Allocate space for the whole contents of the file (unfortunately) */
-    fileString = (char *)NEditMalloc(fileLen+1);  /* +1 = space for null */
-    if (fileString == NULL) {
-        fclose(fp);
-        window->filenameSet = FALSE; /* Temp. prevent check for changes. */
-        DialogF(DF_ERR, window->shell, 1, "Error while opening File",
-                "File is too large to edit", "OK");
-        window->filenameSet = TRUE;
-        return FALSE;
-    }
+	
+    if (window->fileIsZipped) {
+		/* allocate memory */
+		fileLen = 0 ;
+		gzReadLen = 0 ;		/* init total length */
+		gzBufLen = 100 ;	/* TODO: add dependency on gz file length */
+		
+		/* re-open as gz file */
+		gzFp = gzdopen(fileno(fp), "rb");
+		/* Allocate space for a fragment of the file */
+		fileString = (char *)NEditMalloc(gzBufLen+1);	/* +1 = space for null */
+		if (fileString == NULL) {
+			gzclose(gzFp);
+			window->filenameSet = FALSE; /* Temp. prevent check for changes. */
+			DialogF(DF_ERR, window->shell, 1, "Error while opening File",
+					"File is too large to edit", "OK");
+			window->filenameSet = TRUE;
+			return FALSE;
+		}
+		readLen = gzread(gzFp, fileString, gzBufLen);
+		fileLen = readLen  ;
+		while(1) {
+			int err;
+			if (readLen < gzBufLen - 1) {
+				if (gzeof (gzFp)) {
+					break;
+				} else {
+					const char * error_string;
+					error_string = gzerror (gzFp, & err);
+					if (err) {
+						fprintf (stderr, "Error: %s.\n", error_string);
+						return FALSE;
+					}
+				}
+			}
+            /* next chunk */
+            fileString = NEditRealloc(fileString, fileLen+gzBufLen+1) ;
+			if (fileString == NULL) {
+				gzclose(gzFp);
+				window->filenameSet = FALSE; /* Temp. prevent check for changes. */
+				DialogF(DF_ERR, window->shell, 1, "Error while opening File",
+						"File is too large to edit", "OK");
+				window->filenameSet = TRUE;
+				return FALSE;
+			}
+			readLen = gzread(gzFp, fileString+fileLen, gzBufLen);
+			fileLen = fileLen + readLen;
+		}
+		readLen=fileLen;	/* readLen is used below */
+		fileString[readLen] = 0;
+		
+		/* Close the file */
+		if (gzclose(gzFp) != Z_OK) {
+			/* unlikely error */
+			DialogF(DF_WARN, window->shell, 1, "Error while opening File",
+					"Unable to close file", "OK");
+			/* we read it successfully, so continue */
+		}
 
-    /* Read the file into fileString and terminate with a null */
-    readLen = fread(fileString, sizeof(char), fileLen, fp);
-    if (ferror(fp)) {
-        fclose(fp);
-        window->filenameSet = FALSE; /* Temp. prevent check for changes. */
-        DialogF(DF_ERR, window->shell, 1, "Error while opening File",
-                "Error reading %s:\n%s", "OK", name, errorString());
-        window->filenameSet = TRUE;
-        NEditFree(fileString);
-        return FALSE;
-    }
-    fileString[readLen] = 0;
- 
-    /* Close the file */
-    if (fclose(fp) != 0) {
-        /* unlikely error */
-        DialogF(DF_WARN, window->shell, 1, "Error while opening File",
-                "Unable to close file", "OK");
-        /* we read it successfully, so continue */
-    }
+	} else {
+		/* non zipped file */
+		fileLen = statbuf.st_size;
+		
+		/* Allocate space for the whole contents of the file (unfortunately) */
+		fileString = (char *)NEditMalloc(fileLen+1);  /* +1 = space for null */
+		if (fileString == NULL) {
+			fclose(fp);
+			window->filenameSet = FALSE; /* Temp. prevent check for changes. */
+			DialogF(DF_ERR, window->shell, 1, "Error while opening File",
+					"File is too large to edit", "OK");
+			window->filenameSet = TRUE;
+			return FALSE;
+		}
+		
+		/* Read the file into fileString and terminate with a null */
+		readLen = fread(fileString, sizeof(char), fileLen, fp);
+		if (ferror(fp)) {
+			fclose(fp);
+			window->filenameSet = FALSE; /* Temp. prevent check for changes. */
+			DialogF(DF_ERR, window->shell, 1, "Error while opening File",
+					"Error reading %s:\n%s", "OK", name, errorString());
+			window->filenameSet = TRUE;
+			NEditFree(fileString);
+			return FALSE;
+		}
+		fileString[readLen] = 0;
+		 
+		/* Close the file */
+		if (fclose(fp) != 0) {
+			/* unlikely error */
+			DialogF(DF_WARN, window->shell, 1, "Error while opening File",
+					"Unable to close file", "OK");
+			/* we read it successfully, so continue */
+		}
+	}
 
     /* Any errors that happen after this point leave the window in a 
         "broken" state, and thus RevertToSaved will abandon the window if
@@ -934,10 +1002,14 @@ static int doSave(WindowInfo *window)
     struct stat statbuf;
     FILE *fp;
     int fileLen, result;
+    gzFile gzFp;
 
     /* Get the full name of the file */
     strcpy(fullname, window->path);
     strcat(fullname, window->filename);
+    
+    /* we recognize gz files only be file ending, otherwise we have too many cases (new file) */
+	window->fileIsZipped = filenameEndsWithGz(window->filename);
 
     /*  Check for root and warn him if he wants to write to a file with
         none of the write bits set.  */
@@ -1021,29 +1093,59 @@ static int doSave(WindowInfo *window)
     }
 
     /* write to the file */
+    if (window->fileIsZipped) {
+		int err; 
+		const char * error_string;
+		
+		/* re-open as gz file */
+		gzFp = gzdopen(fileno(fp), "wb");
+
+		gzwrite(gzFp, fileString, fileLen);
+		error_string = gzerror(gzFp, &err);
+		if (err)
+		{
+			DialogF(DF_ERR, window->shell, 1, "Error saving File",
+					"%s not saved:\n%s", "OK", window->filename, error_string);
+			gzclose(gzFp);
+			remove(fullname);
+			NEditFree(fileString);
+			return FALSE;
+		}
+
+		/* close the file */
+		if (gzclose(gzFp) != Z_OK)
+		{
+			DialogF(DF_ERR, window->shell, 1, "Error closing File",
+					"Error closing file after Save:\n%s", "OK", errorString());
+			NEditFree(fileString);
+			return FALSE;
+		}
+
+	} else {
+	
 #ifdef IBM_FWRITE_BUG
-    write(fileno(fp), fileString, fileLen);
+		write(fileno(fp), fileString, fileLen);
 #else
-    fwrite(fileString, sizeof(char), fileLen, fp);
+		fwrite(fileString, sizeof(char), fileLen, fp);
 #endif
-    if (ferror(fp))
-    {
-        DialogF(DF_ERR, window->shell, 1, "Error saving File",
-                "%s not saved:\n%s", "OK", window->filename, errorString());
-        fclose(fp);
-        remove(fullname);
-        NEditFree(fileString);
-        return FALSE;
-    }
-    
-    /* close the file */
-    if (fclose(fp) != 0)
-    {
-        DialogF(DF_ERR, window->shell, 1, "Error closing File",
-                "Error closing file:\n%s", "OK", errorString());
-        NEditFree(fileString);
-        return FALSE;
-    }
+		if (ferror(fp))
+		{
+			DialogF(DF_ERR, window->shell, 1, "Error saving File",
+					"%s not saved:\n%s", "OK", window->filename, errorString());
+			fclose(fp);
+			remove(fullname);
+			NEditFree(fileString);
+			return FALSE;
+		}
+		/* close the file */
+		if (fclose(fp) != 0)
+		{
+			DialogF(DF_ERR, window->shell, 1, "Error closing File",
+					"Error closing file:\n%s", "OK", errorString());
+			NEditFree(fileString);
+			return FALSE;
+		}
+	}
 
     /* free the text buffer copy returned from XmTextGetString */
     NEditFree(fileString);
@@ -2119,4 +2221,12 @@ static void forceShowLineNumbers(WindowInfo *window)
 static int min(int i1, int i2)
 {
     return i1 <= i2 ? i1 : i2;
+}
+
+static Boolean filenameEndsWithGz(const char *name)
+{
+	name = strrchr(name, '.');
+	if( name != NULL )
+		return( strcmp(name, ".gz") == 0 );
+	return( 0 );
 }

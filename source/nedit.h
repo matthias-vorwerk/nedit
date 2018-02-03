@@ -493,6 +493,7 @@ typedef struct _WindowInfo {
     int         lockReasons;            /* all ways a file can be locked */
     Boolean	autoSave;		/* is autosave turned on? */
     Boolean	saveOldVersion;		/* keep old version in filename.bck */
+    Boolean fileIsZipped;     /* if we create/read a gzipped file and have to save it accordingly */
     IndentStyle	indentStyle;		/* whether/how to auto indent */
     WrapStyle	wrapMode;		/* line wrap style: NO_WRAP,
     	    	    	    	    	   NEWLINE_WRAP or CONTINUOUS_WRAP */
