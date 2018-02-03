@@ -1328,8 +1328,19 @@ static int writeBckVersion(WindowInfo *window)
     if ((strlen(fullname) + 5) > (size_t) MAXPATHLEN) {
         return bckError(window, "file name too long", window->filename);
     }
-    sprintf(bckname, "%s.bck", fullname);
-
+    
+    /* we recognize gz files only be file ending, otherwise we have too many cases (new file) */
+	window->fileIsZipped = filenameEndsWithGz(window->filename);
+	if (window->fileIsZipped) {
+		/* modify suffix */
+		sprintf(bckname, "%s", fullname);	
+		char * sfxptr;
+		sfxptr = strrchr(bckname, '.');
+		strncpy (sfxptr,".bck.gz\0",8);
+	} else {
+		sprintf(bckname, "%s.bck", fullname);	
+	}
+	
     /* Delete the old backup file */
     /* Errors are ignored; we'll notice them later. */
     remove(bckname);
