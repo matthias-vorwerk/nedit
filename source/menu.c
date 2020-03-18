@@ -107,6 +107,10 @@ static void doTabActionCB(Widget w, XtPointer clientData, XtPointer callData);
 static void pasteColCB(Widget w, XtPointer clientData, XtPointer callData); 
 static void shiftLeftCB(Widget w, XtPointer clientData, XtPointer callData);
 static void shiftRightCB(Widget w, XtPointer clientData, XtPointer callData);
+#ifdef TAB_SELECT_SHIFT_TEXT_PATCH
+static void shiftLeftShiftCB(Widget w, XtPointer clientData, XtPointer callData);
+static void shiftRightShiftCB(Widget w, XtPointer clientData, XtPointer callData);
+#endif
 static void findCB(Widget w, XtPointer clientData, XtPointer callData);
 static void findSameCB(Widget w, XtPointer clientData, XtPointer callData);
 static void findSelCB(Widget w, XtPointer clientData, XtPointer callData);
@@ -741,10 +745,18 @@ Widget CreateMenuBar(Widget parent, WindowInfo *window)
     createMenuSeparator(menuPane, "sep2", SHORT);
     createMenuItem(menuPane, "shiftLeft", "Shift Left", 'L',
     	    shiftLeftCB, window, SHORT);
+#ifdef TAB_SELECT_SHIFT_TEXT_PATCH 
+    createFakeMenuItem(menuPane, "shiftLeftShift", shiftLeftShiftCB, window);
+#else            
     createFakeMenuItem(menuPane, "shiftLeftShift", shiftLeftCB, window);
+#endif
     createMenuItem(menuPane, "shiftRight", "Shift Right", 'g',
     	    shiftRightCB, window, SHORT);
+#ifdef TAB_SELECT_SHIFT_TEXT_PATCH 
+    createFakeMenuItem(menuPane, "shiftRightShift", shiftRightShiftCB, window);
+#else            
     createFakeMenuItem(menuPane, "shiftRightShift", shiftRightCB, window);
+#endif
     window->lowerItem=createMenuItem(menuPane, "lowerCase", "Lower-case", 'w',
     	    doActionCB, "lowercase", SHORT);
     window->upperItem=createMenuItem(menuPane, "upperCase", "Upper-case", 'e',
@@ -1412,6 +1424,41 @@ static void shiftRightCB(Widget w, XtPointer clientData, XtPointer callData)
     	    ? "shift_right_by_tab" : "shift_right",
     	    ((XmAnyCallbackStruct *)callData)->event, NULL, 0);
 }
+
+#ifdef TAB_SELECT_SHIFT_TEXT_PATCH
+static void shiftLeftShiftCB(Widget w, XtPointer clientData, XtPointer callData)
+{  
+    HidePointerOnKeyedEvent(WidgetToWindow(MENU_WIDGET(w))->lastFocus,
+            ((XmAnyCallbackStruct *)callData)->event);
+    XtCallActionProc(WidgetToWindow(MENU_WIDGET(w))->lastFocus,
+           "shift_left_by_tab",
+           ((XmAnyCallbackStruct *)callData)->event, NULL, 0);
+}
+
+static void shiftRightShiftCB(Widget w, XtPointer clientData, XtPointer callData)
+{
+    WindowInfo *window = WidgetToWindow(MENU_WIDGET(w));
+    if(window->buffer->primary.selected)
+    {
+        HidePointerOnKeyedEvent(WidgetToWindow(MENU_WIDGET(w))->lastFocus,
+                ((XmAnyCallbackStruct *)callData)->event);
+        XtCallActionProc(WidgetToWindow(MENU_WIDGET(w))->lastFocus,
+               "shift_right_by_tab",
+               ((XmAnyCallbackStruct *)callData)->event, NULL, 0);    
+    }
+    else
+    {
+       /*just add the 'tab' character as normal*/
+   XEvent *event = ((XmAnyCallbackStruct *)callData)->event;
+   /*
+   tw->text.autoWrapPastedText
+   */
+   Widget tw = window->textArea;
+   TextInsertAtCursor(tw, "\t", event, True, True);
+    }
+}
+#endif
+
 
 static void findCB(Widget w, XtPointer clientData, XtPointer callData)
 {

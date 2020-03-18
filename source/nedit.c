@@ -280,12 +280,21 @@ static char *fallbackResources[] = {
     "*editMenu.delete.acceleratorText: Del",
     "*editMenu.selectAll.accelerator: Ctrl<Key>a",
     "*editMenu.selectAll.acceleratorText: Ctrl+A",
+    #ifdef TAB_SELECT_SHIFT_TEXT_PATCH
+    "*editMenu.shiftLeft.accelerator: Ctrl<Key>9",
+    "*editMenu.shiftLeft.acceleratorText: Shift Tab",
+    "*editMenu.shiftLeftShift.accelerator: Shift<Key>Tab",
+    "*editMenu.shiftRight.accelerator: Ctrl<Key>0",
+    "*editMenu.shiftRight.acceleratorText: Tab",
+    "*editMenu.shiftRightShift.accelerator: <Key>Tab",
+    #else   
     "*editMenu.shiftLeft.accelerator: Ctrl<Key>9",
     "*editMenu.shiftLeft.acceleratorText: [Shift]Ctrl+9",
     "*editMenu.shiftLeftShift.accelerator: Shift Ctrl<Key>9",
     "*editMenu.shiftRight.accelerator: Ctrl<Key>0",
     "*editMenu.shiftRight.acceleratorText: [Shift]Ctrl+0",
     "*editMenu.shiftRightShift.accelerator: Shift Ctrl<Key>0",
+    #endif
     "*editMenu.upperCase.accelerator: Ctrl<Key>6",
     "*editMenu.upperCase.acceleratorText: Ctrl+6",
     "*editMenu.lowerCase.accelerator: Shift Ctrl<Key>6",

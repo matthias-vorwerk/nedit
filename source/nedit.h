@@ -44,6 +44,8 @@
 #define NEDIT_VERSION           5
 #define NEDIT_REVISION          7
 
+#define TAB_SELECT_SHIFT_TEXT_PATCH
+
 /* Some default colors */
 #define NEDIT_DEFAULT_FG        "black"
 #define NEDIT_DEFAULT_TEXT_BG   "rgb:e5/e5/e5"
